@@ -481,7 +481,69 @@ async fn get_dht_events(state: State<'_, AppState>) -> Result<Vec<String>, Strin
     }
 }
 
+#[derive(serde::Serialize, Clone)]
+struct GpuTemperature {
+    name: String,
+    temperature: f32,
+}
+
 #[tauri::command]
+fn get_gpu_temperatures() -> Option<Vec<GpuTemperature>> {
+    let components = Components::new_with_refreshed_list();
+    for component in components.iter() {
+        println!("Component: {} - Temp: {}", component.label(), component.temperature());
+    }
+    let mut gpu_temps: Vec<GpuTemperature> = Vec::new();
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut tdev_temps: Vec<f32> = Vec::new();
+        for c in components.iter() {
+            let label = c.label().to_lowercase();
+            if label.contains("tdev") {
+                tdev_temps.push(c.temperature());
+            }
+        }
+
+        if !tdev_temps.is_empty() {
+            let avg_temp = tdev_temps.iter().sum::<f32>() / tdev_temps.len() as f32;
+            gpu_temps.push(GpuTemperature {
+                name: "GPU".to_string(),
+                temperature: avg_temp,
+            });
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut temps: Vec<f32> = Vec::new();
+        for c in components.iter() {
+            let label = c.label().to_lowercase();
+            if label.contains("gpu") || label.contains("vga") || label.contains("nvidia") || label.contains("amd") {
+                temps.push(c.temperature());
+            }
+        }
+        if !temps.is_empty() {
+            let avg_temp = temps.iter().sum::<f32>() / temps.len() as f32;
+            gpu_temps.push(GpuTemperature {
+                name: "GPU".to_string(),
+                temperature: avg_temp,
+            });
+        }
+    }
+
+    if gpu_temps.is_empty() {
+        None
+    } else {
+        Some(gpu_temps)
+    }
+}
+
+#[tauri::command]
+fn get_temperatures() -> (Option<f32>, Option<Vec<GpuTemperature>>) {
+    (get_cpu_temperature(), get_gpu_temperatures())
+}
+
 fn get_cpu_temperature() -> Option<f32> {
     static mut LAST_UPDATE: Option<Instant> = None;
     unsafe {
@@ -735,9 +797,6 @@ async fn get_file_transfer_events(state: State<'_, AppState>) -> Result<Vec<Stri
                 FileTransferEvent::FileDownloaded { file_path } => {
                     format!("file_downloaded:{}", file_path)
                 }
-                FileTransferEvent::FileNotFound { file_hash } => {
-                    format!("file_not_found:{}", file_hash)
-                }
                 FileTransferEvent::Error { message } => {
                     format!("error:{}", message)
                 }
@@ -826,7 +885,7 @@ fn main() {
             get_miner_performance,
             get_blocks_mined,
             get_recent_mined_blocks_pub,
-            get_cpu_temperature,
+            get_temperatures,
             start_dht_node,
             stop_dht_node,
             publish_file_metadata,

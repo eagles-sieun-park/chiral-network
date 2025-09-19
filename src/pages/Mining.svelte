@@ -50,9 +50,10 @@
   let estimatedTimeToBlock = 0
   $: powerConsumption = $miningState.activeThreads * 15
   $: efficiency = $miningState.hashRate === '0 H/s' ? 0 : parseHashRate($miningState.hashRate) / powerConsumption
-  let temperature = 45.0
+    let cpuTemperature = 45.0;
+  let gpuTemperatures: { name: string, temperature: number }[] = [];
   $: if (!isTauri) {
-    temperature = 45 + ($miningState.activeThreads * 3.5)
+    cpuTemperature = 45 + ($miningState.activeThreads * 3.5)
   }
 
   // Uptime tick (forces template to re-render every second while mining)
@@ -192,7 +193,7 @@
       await updateMiningStats()
     }
     if (isTauri) {
-      await updateCpuTemperature()
+            await updateTemperatures()
     }
     
     // Start polling for mining stats
@@ -203,7 +204,7 @@
       }
       await updateNetworkStats()
       if (isTauri) {
-        await updateCpuTemperature()
+              await updateTemperatures()
       }
     }, 1000) as unknown as number
   })
@@ -359,15 +360,17 @@
     }
   }
 
-  async function updateCpuTemperature() {
+    async function updateTemperatures() {
     try {
-      const temp = await invoke('get_cpu_temperature') as number
-      console.log(temp)
-      if (temp > 0) {
-        temperature = temp
+      const [cpuTemp, gpuTemps] = await invoke('get_temperatures') as [number | null, { name: string, temperature: number }[] | null];
+      if (cpuTemp !== null && cpuTemp > 0) {
+        cpuTemperature = cpuTemp;
+      }
+      if (gpuTemps !== null) {
+        gpuTemperatures = gpuTemps;
       }
     } catch (e) {
-      console.error('Failed to get CPU temperature:', e)
+      console.error('Failed to get temperatures:', e);
     }
   }
   
@@ -420,7 +423,7 @@
       // Update power and temperature estimates
       powerConsumption = $miningState.activeThreads * 25 * ($miningState.minerIntensity / 100)
       if (!isTauri) {
-        temperature = 45 + ($miningState.activeThreads * 3) + ($miningState.minerIntensity / 10)
+        cpuTemperature = 45 + ($miningState.activeThreads * 3) + ($miningState.minerIntensity / 10)
       }
       
       // Re-check geth status since it might have restarted
@@ -753,7 +756,7 @@
   </div>
   
   <!-- Mining Status Cards -->
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
     <Card class="p-4">
       <div class="flex items-center justify-between">
         <div>
@@ -800,16 +803,16 @@
       </div>
     </Card>
     
-    <Card class="p-4">
+        <Card class="p-4">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm text-muted-foreground">{$t('mining.temperature')}</p>
-          <p class="text-2xl font-bold">{temperature.toFixed(1)}°C</p>
+          <p class="text-sm text-muted-foreground">CPU {$t('mining.temperature')}</p>
+          <p class="text-2xl font-bold">{cpuTemperature.toFixed(1)}°C</p>
           <div class="mt-1">
             <Progress 
-              value={temperature} 
+              value={cpuTemperature} 
               max={100} 
-              class="h-1 {temperature > 80 ? 'bg-red-500' : temperature > 60 ? 'bg-yellow-500' : ''}"
+              class="h-1 {cpuTemperature > 80 ? 'bg-red-500' : cpuTemperature > 60 ? 'bg-yellow-500' : ''}"
             />
           </div>
         </div>
@@ -818,6 +821,27 @@
         </div>
       </div>
     </Card>
+
+        {#each gpuTemperatures as gpu}
+    <Card class="p-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm text-muted-foreground">{gpu.name} {$t('mining.temperature')}</p>
+          <p class="text-2xl font-bold">{gpu.temperature.toFixed(1)}°C</p>
+          <div class="mt-1">
+            <Progress 
+              value={gpu.temperature} 
+              max={100} 
+              class="h-1 {gpu.temperature > 80 ? 'bg-red-500' : gpu.temperature > 60 ? 'bg-yellow-500' : ''}"
+            />
+          </div>
+        </div>
+        <div class="p-2 bg-red-500/10 rounded-lg">
+          <Thermometer class="h-5 w-5 text-red-500" />
+        </div>
+      </div>
+    </Card>
+    {/each}
     
     <!-- Pool Status Card (only show when pool is selected) -->
     {#if $miningState.selectedPool !== 'solo'}

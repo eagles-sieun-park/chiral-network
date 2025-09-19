@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRequest {
@@ -29,7 +29,6 @@ pub enum FileTransferCommand {
         file_hash: String,
         output_path: String,
     },
-    GetStoredFiles,
 }
 
 #[derive(Debug, Clone)]
@@ -40,9 +39,6 @@ pub enum FileTransferEvent {
     },
     FileDownloaded {
         file_path: String,
-    },
-    FileNotFound {
-        file_hash: String,
     },
     Error {
         message: String,
@@ -133,10 +129,6 @@ impl FileTransferService {
                         }
                     }
                 }
-                FileTransferCommand::GetStoredFiles => {
-                    // This could be used to list available files
-                    debug!("GetStoredFiles command received");
-                }
             }
         }
     }
@@ -215,14 +207,6 @@ impl FileTransferService {
             })
             .await
             .map_err(|e| e.to_string())
-    }
-
-    pub async fn get_stored_files(&self) -> Result<Vec<(String, String)>, String> {
-        let files = self.stored_files.lock().await;
-        Ok(files
-            .iter()
-            .map(|(hash, (name, _))| (hash.clone(), name.clone()))
-            .collect())
     }
 
     pub async fn drain_events(&self, max: usize) -> Vec<FileTransferEvent> {
